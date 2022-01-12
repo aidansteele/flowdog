@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  Alias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/flowdog-ca
+      TargetKeyId: !Ref Key
+
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Flowdog Root CA
+      KeySpec: ECC_NIST_P256
+      KeyUsage: SIGN_VERIFY
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: key-policy
+        Statement:
+          - Sid: AllowIAM
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+
+Outputs:
+  Alias:
+    Value: !Ref Alias
+  Key:
+    Value: !GetAtt Key.Arn

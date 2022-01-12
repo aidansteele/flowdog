@@ -1,0 +1,18 @@
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./lambda/bootstrap
+      Architectures: [arm64]
+      AutoPublishAlias: live
+      Runtime: provided.al2
+      Handler: unused
+      MemorySize: 512
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension-Arm64:1
+
+Outputs:
+  Function:
+    Value: !Ref Function.Version
