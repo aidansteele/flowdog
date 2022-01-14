@@ -215,7 +215,7 @@ func (a *activeFlow) sendGeneve(body []byte) error {
 
 func newEndpointAndStack(opts AwsGeneveOptions) (*channel.Endpoint, *stack.Stack) {
 	linkAddr, _ := tcpip.ParseMACAddress("aa:bb:cc:dd:ee:ff")
-	endpoint := channel.New(200, 1500, linkAddr)
+	endpoint := channel.New(200, 8500, linkAddr)
 
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
