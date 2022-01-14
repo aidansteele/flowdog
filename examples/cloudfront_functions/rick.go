@@ -7,6 +7,6 @@ import (
 
 func NewRickroll() gwlb.Interceptor {
 	script, _ := ioutil.ReadFile("rick.js")
-	cff, _ := NewCloudfrontFunctions(script)
+	cff, _ := NewCloudfrontFunctions(string(script))
 	return cff
 }
