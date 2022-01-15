@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option go_package = "github.com/aidansteele/flowdog/gwlb/shark";
+
+import "google/protobuf/timestamp.proto";
+
+message GetPacketsInput {
+  string Filter = 1;
+}
+
+message GetPacketsOutput {
+  bytes Payload = 1;
+  google.protobuf.Timestamp Time = 2;
+  bytes SslKeyLog = 3;
+}
+
+service Vpcshark {
+  rpc GetPackets(GetPacketsInput) returns (stream GetPacketsOutput) {}
+}

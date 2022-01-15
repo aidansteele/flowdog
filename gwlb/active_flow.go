@@ -3,6 +3,7 @@ package gwlb
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/aidansteele/flowdog/mytls"
 	"github.com/google/gopacket"
@@ -17,6 +18,7 @@ import (
 	"inet.af/netstack/tcpip/network/ipv4"
 	"inet.af/netstack/tcpip/stack"
 	"inet.af/netstack/tcpip/transport/tcp"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -32,48 +34,55 @@ var errTimeout = errors.New("gwlb timeout")
 type activeFlow struct {
 	geneveHeader []byte
 	gwlbConn     *net.UDPConn
+	mirror       chan []byte
 	endpoint     *channel.Endpoint
 	stack        *stack.Stack
 	httpReady    chan struct{}
-	handler      http.Handler
 }
 
 type FlowAcceptor interface {
 	AcceptFlow(ctx context.Context, pkt gopacket.Packet, opts AwsGeneveOptions) bool
 }
 
-func newFlow(ctx context.Context, ch chan genevePacket, acceptor FlowAcceptor, opts AwsGeneveOptions, handler http.Handler) {
-	ctx = ContextWithGeneveOptions(ctx, opts)
+type newFlowOptions struct {
+	acceptor  FlowAcceptor
+	handler   http.Handler
+	keyLogger io.Writer
+	mirror    chan []byte
+}
+
+func newFlow(ctx context.Context, ch chan genevePacket, geneveOpts AwsGeneveOptions, options newFlowOptions) {
+	ctx = ContextWithGeneveOptions(ctx, geneveOpts)
 
 	// retrieve first packet in flow to inspect ip, port, etc
 	pkt := <-ch
 	// then we reinject for forwarding/interception/whatever
 	go func() { ch <- pkt }()
 
-	if acceptor != nil && !acceptor.AcceptFlow(ctx, pkt.pkt, opts) {
+	if options.acceptor != nil && !options.acceptor.AcceptFlow(ctx, pkt.pkt, geneveOpts) {
 		return // TODO: this should probably send a refusal (for tcp) instead of silent dropping
 	}
 
-	fmt.Printf("new flow vpcEndpointId=%016x attachmentId=%016x flowCookie=%08x\n", opts.VpcEndpointId, opts.AttachmentId, opts.FlowCookie)
+	fmt.Printf("%s new flow vpcEndpointId=%016x attachmentId=%016x flowCookie=%08x\n", time.Now().String(), geneveOpts.VpcEndpointId, geneveOpts.AttachmentId, geneveOpts.FlowCookie)
 	gwlbConn := getUdpConn(pkt.addr)
 
 	ipLayer, isIpv4 := pkt.pkt.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	tcpLayer, isTcp := pkt.pkt.TransportLayer().(*layers.TCP)
 
 	if !isTcp {
-		fmt.Printf("fast-path for non-tcp flow=%08x\n", opts.FlowCookie)
+		fmt.Printf("fast-path for non-tcp flow=%08x\n", geneveOpts.FlowCookie)
 		fastPath(ctx, ch, gwlbConn, timeoutNonTcp)
 		return
 	}
 
 	if !isIpv4 {
-		fmt.Printf("fast-path for non-ipv4 flow=%08x\n", opts.FlowCookie)
+		fmt.Printf("fast-path for non-ipv4 flow=%08x\n", geneveOpts.FlowCookie)
 		fastPath(ctx, ch, gwlbConn, timeoutTcp)
 		return
 	}
 
-	if handler == nil || (tcpLayer.DstPort != 80 && tcpLayer.DstPort != 443) {
-		fmt.Printf("fast-path for non-port 80/443 flow=%08x\n", opts.FlowCookie)
+	if options.handler == nil || (tcpLayer.DstPort != 80 && tcpLayer.DstPort != 443) {
+		fmt.Printf("fast-path for non-port 80/443 flow=%08x\n", geneveOpts.FlowCookie)
 		fastPath(ctx, ch, gwlbConn, timeoutTcp)
 		return
 	}
@@ -86,16 +95,16 @@ func newFlow(ctx context.Context, ch chan genevePacket, acceptor FlowAcceptor, o
 	sourceAddr := &net.TCPAddr{IP: ipLayer.SrcIP, Port: int(tcpLayer.SrcPort)}
 	ctx = ContextWithSourceAddr(ctx, sourceAddr)
 
-	endpoint, netstack := newEndpointAndStack(opts)
+	endpoint, netstack := newEndpointAndStack(geneveOpts)
 	ctx = ContextWithNetstack(ctx, netstack)
 
 	a := &activeFlow{
 		geneveHeader: hdr,
 		gwlbConn:     gwlbConn,
 		endpoint:     endpoint,
+		mirror:       options.mirror,
 		stack:        netstack,
 		httpReady:    make(chan struct{}, 1),
-		handler:      handler,
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -105,7 +114,9 @@ func newFlow(ctx context.Context, ch chan genevePacket, acceptor FlowAcceptor, o
 	})
 
 	g.Go(func() error {
-		return a.runProxyHttp(ctx)
+		config := mytls.TlsConfig().Clone()
+		config.KeyLogWriter = options.keyLogger
+		return a.runProxyHttp(ctx, options.handler, config)
 	})
 
 	g.Go(func() error {
@@ -125,6 +136,8 @@ func newFlow(ctx context.Context, ch chan genevePacket, acceptor FlowAcceptor, o
 }
 
 func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket, timeout time.Duration) error {
+	originator := SourceAddrFromContext(ctx).IP.String()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -134,6 +147,17 @@ func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket
 		case pkt := <-ch:
 			geneveLayer := pkt.pkt.Layer(layers.LayerTypeGeneve).(*layers.Geneve)
 			payload := geneveLayer.LayerPayload()
+
+			// TODO ipv6
+			ipLayer := pkt.pkt.NetworkLayer().(*layers.IPv4)
+
+			// TODO: avoid stringification in hot path
+			if originator == ipLayer.SrcIP.String() {
+				mirrorCopy := make([]byte, len(pkt.buf))
+				copy(mirrorCopy, pkt.buf)
+				a.mirror <- mirrorCopy
+			}
+
 			data := buffer.NewVectorisedView(1, []buffer.View{payload})
 			newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: data})
 			a.endpoint.InjectInbound(ipv4.ProtocolNumber, newPkt)
@@ -143,28 +167,45 @@ func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket
 }
 
 func (a *activeFlow) runNetstackToGwlb(ctx context.Context) error {
+	buf := &bytes.Buffer{}
+	originator := SourceAddrFromContext(ctx).IP.String()
+
 	for {
 		pinfo, more := a.endpoint.ReadContext(ctx)
 		if !more {
+			fmt.Printf("exiting flow with cookie %08x\n", GeneveOptionsFromContext(ctx).FlowCookie)
 			return ctx.Err()
 		}
 
 		data := buffer.NewVectorisedView(pinfo.Pkt.Size(), pinfo.Pkt.Views())
 		view := data.ToView()
 
-		err := a.sendGeneve(view)
+		buf.Write(a.geneveHeader)
+		buf.Write(view)
+		payload := buf.Bytes()
+
+		_, err := a.gwlbConn.Write(payload)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
+
+		// TODO: avoid stringification in hot path
+		if pinfo.Route.RemoteAddress.String() == originator {
+			mirrorCopy := make([]byte, len(payload))
+			copy(mirrorCopy, payload)
+			a.mirror <- mirrorCopy
+		}
+
+		buf.Reset()
 	}
 }
 
-func (a *activeFlow) runProxyHttp(ctx context.Context) error {
+func (a *activeFlow) runProxyHttp(ctx context.Context, handler http.Handler, config *tls.Config) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	httpSrv := &http.Server{
-		Handler:     a.handler,
-		TLSConfig:   mytls.TlsConfig(),
+		Handler:     handler,
+		TLSConfig:   config,
 		BaseContext: func(listener net.Listener) context.Context { return ctx },
 	}
 
@@ -198,19 +239,6 @@ func (a *activeFlow) runProxyHttp(ctx context.Context) error {
 	})
 
 	return g.Wait()
-}
-
-func (a *activeFlow) sendGeneve(body []byte) error {
-	buf := &bytes.Buffer{}
-	buf.Write(a.geneveHeader)
-	buf.Write(body)
-
-	_, err := a.gwlbConn.Write(buf.Bytes())
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	return nil
 }
 
 func newEndpointAndStack(opts AwsGeneveOptions) (*channel.Endpoint, *stack.Stack) {

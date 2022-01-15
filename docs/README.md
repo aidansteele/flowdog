@@ -35,6 +35,15 @@ cool ideas you have. Or any enhancements to the following ideas.
   we're ensuring that any [AWS Workspaces][workspaces] users visiting YouTube
   can only watch one particular video.
 
+* [`flowdogshark/flowdogshark.go`](/examples/flowdogshark/flowdogshark.go) is an
+  [`extcap`][extcap] plugin for Wireshark that allows you to live-attach 
+  Wireshark to flowdog and capture traffic flowing through your VPC. Given that
+  flowdog does TLS interception (see later section in README), it can even use 
+  Wireshark's support for decoding TLS. Here's an example of intercepting the
+  Amazon SSM agent:
+
+  ![wireshark demo](wireshark-demo.png)
+
 * [`account_id_emf/account_id_emf.go`](/examples/account_id_emf/account_id_emf.go)
   is an example of scanning all AWS API calls made within the VPC for SigV4 auth
   headers, [extracting the AWS account ID][extract-acct-id] and emitting it to
@@ -77,6 +86,11 @@ Rather than invoking KMS on every TLS connection, on launch this app creates an
 ephemeral key pair and certificate in memory, asks KMS to sign it and then uses
 that as an intermediate certificate authority. This means we can have fast TLS
 de/re-encryption with no stored secrets.
+
+When Wireshark is attached, flowdog can stream TLS key logs in [NSS Key Log Format][klf].
+This allows the Wireshark user to view all decrypted TLS traffic without giving
+away either the KMS private key (impossible) or intermediate CA private key (very
+unwise).
 
 ## Why so hard?
 
@@ -155,6 +169,8 @@ are:
   JavaScript engine into Go, so that we can write scripts to modify traffic
   in JS, which is more familiar than Go to many developers.
 
+[extcap]: https://www.wireshark.org/docs/man-pages/extcap.html
+[klf]: https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/Key_Log_Format
 [twit]: https://twitter.com/__steele
 [kms]: https://docs.aws.amazon.com/kms/latest/developerguide/symmetric-asymmetric.html
 [cff-model]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/writing-function-code.html
