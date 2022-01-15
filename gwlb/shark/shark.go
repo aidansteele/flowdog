@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -33,7 +34,7 @@ func NewSharkServer() *SharkServer {
 	return &SharkServer{keyLogWriter: pw, keyLogReader: pr}
 }
 
-func (s *SharkServer) Serve(ctx context.Context, l net.Listener, ch chan []byte) error {
+func (s *SharkServer) Serve(ctx context.Context, l net.Listener, ch chan mirror.Packet) error {
 	s.ctx = ctx
 	go s.run(ch)
 
@@ -98,14 +99,18 @@ func (s *SharkServer) forEachClient(fn func(c *client) error) {
 	s.clients = s.clients[:validLen]
 }
 
-func (s *SharkServer) run(ch chan []byte) {
+func (s *SharkServer) run(ch chan mirror.Packet) {
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case pkt := <-ch:
-			geneve := gopacket.NewPacket(pkt, layers.LayerTypeGeneve, gopacket.Default).Layer(layers.LayerTypeGeneve).(*layers.Geneve)
+			geneve := gopacket.NewPacket(pkt.Packet, layers.LayerTypeGeneve, gopacket.Default).Layer(layers.LayerTypeGeneve).(*layers.Geneve)
 			s.forEachClient(func(c *client) error {
+				if c.mirrorType != pkt.Type {
+					return nil
+				}
+
 				match := c.vm.Matches(gopacket.CaptureInfo{}, geneve.LayerPayload())
 				if !match {
 					return nil
@@ -113,7 +118,7 @@ func (s *SharkServer) run(ch chan []byte) {
 
 				return c.stream.Send(&GetPacketsOutput{
 					Time:    timestamppb.New(time.Now()),
-					Payload: pkt,
+					Payload: pkt.Packet,
 				})
 			})
 		}
@@ -121,8 +126,9 @@ func (s *SharkServer) run(ch chan []byte) {
 }
 
 type client struct {
-	stream Vpcshark_GetPacketsServer
-	vm     *pcap.BPF
+	stream     Vpcshark_GetPacketsServer
+	vm         *pcap.BPF
+	mirrorType mirror.Type
 }
 
 func (s *SharkServer) GetPackets(input *GetPacketsInput, stream Vpcshark_GetPacketsServer) error {
@@ -131,8 +137,20 @@ func (s *SharkServer) GetPackets(input *GetPacketsInput, stream Vpcshark_GetPack
 		return err
 	}
 
+	mirrorType := mirror.TypeUnknown
+	switch input.PacketType {
+	case PacketType_PRE:
+		mirrorType = mirror.TypePreRewrite
+	case PacketType_POST:
+		mirrorType = mirror.TypePostRewrite
+	case PacketType_UNKNOWN:
+		fallthrough
+	default:
+		return errors.New("unknown packet type")
+	}
+
 	s.mut.Lock()
-	s.clients = append(s.clients, &client{stream: stream, vm: vm})
+	s.clients = append(s.clients, &client{stream: stream, vm: vm, mirrorType: mirrorType})
 	s.mut.Unlock()
 
 	<-s.ctx.Done()

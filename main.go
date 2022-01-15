@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"github.com/aidansteele/flowdog/examples/lambda_acceptor"
 	"github.com/aidansteele/flowdog/examples/sts_rickroll"
 	"github.com/aidansteele/flowdog/gwlb"
+	"github.com/aidansteele/flowdog/gwlb/mirror"
+	"github.com/aidansteele/flowdog/gwlb/shark"
 	"github.com/aidansteele/flowdog/kmssigner"
 	"github.com/aidansteele/flowdog/mytls"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -63,14 +66,28 @@ func main() {
 		panic(err)
 	}
 
+	ctx := context.Background()
+
+	shark := shark.NewSharkServer()
+	sharkL, err := net.Listen("tcp", "127.0.0.1:7081")
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		panic(err)
+	}
+
+	mirrorCh := make(chan mirror.Packet)
+	go shark.Serve(ctx, sharkL, mirrorCh)
+
 	server := &gwlb.Server{
-		Handler:  gwlb.DefaultHandler(chain),
-		Acceptor: acceptor,
+		Handler:      gwlb.DefaultHandler(chain, &tls.Config{KeyLogWriter: shark.KeyLogWriter()}),
+		Acceptor:     acceptor,
+		KeyLogWriter: shark.KeyLogWriter(),
+		Mirror:       mirrorCh,
 	}
 
 	go healthChecks()
 
-	err = server.Serve(context.Background(), conn)
+	err = server.Serve(ctx, conn)
 	if err != nil {
 		fmt.Printf("%+v\n", err)
 		panic(err)

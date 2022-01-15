@@ -113,7 +113,10 @@ func startCapture(iface string, pipe io.WriteCloser, filter string, opts map[str
 	}
 
 	client := shark.NewVpcsharkClient(conn)
-	cc, err := client.GetPackets(ctx, &shark.GetPacketsInput{Filter: filter})
+	cc, err := client.GetPackets(ctx, &shark.GetPacketsInput{
+		Filter:     filter,
+		PacketType: shark.PacketType_PRE,
+	})
 	if err != nil {
 		fmt.Printf("%+v\n", err)
 		panic(err)

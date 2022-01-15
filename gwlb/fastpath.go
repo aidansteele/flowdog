@@ -3,11 +3,12 @@ package gwlb
 import (
 	"context"
 	"fmt"
+	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"net"
 	"time"
 )
 
-func fastPath(ctx context.Context, ch chan genevePacket, gwlbConn *net.UDPConn, timeout time.Duration) {
+func fastPath(ctx context.Context, ch chan genevePacket, gwlbConn *net.UDPConn, mirrorch chan mirror.Packet, timeout time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -18,6 +19,7 @@ func fastPath(ctx context.Context, ch chan genevePacket, gwlbConn *net.UDPConn, 
 				fmt.Printf("%+v\n", err)
 				panic(err)
 			}
+			mirrorch <- mirror.New(pkt.buf, true)
 		case <-time.After(timeout):
 			return
 		}

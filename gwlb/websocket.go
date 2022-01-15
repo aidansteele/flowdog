@@ -2,6 +2,7 @@ package gwlb
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -10,7 +11,7 @@ import (
 	"net/http"
 )
 
-func proxyWebsocket(w http.ResponseWriter, r *http.Request) {
+func proxyWebsocket(w http.ResponseWriter, r *http.Request, tlsClientConfig *tls.Config) {
 	up := websocket.Upgrader{CheckOrigin: nil} // TODO: check this field
 
 	ctx := r.Context()
@@ -29,7 +30,11 @@ func proxyWebsocket(w http.ResponseWriter, r *http.Request) {
 	newHeaders.Del("Sec-Websocket-Extensions")
 	newHeaders.Del("Sec-Websocket-Protocol")
 
-	dialer := &websocket.Dialer{NetDialContext: DialContext}
+	dialer := &websocket.Dialer{
+		NetDialContext:  DialContext,
+		TLSClientConfig: tlsClientConfig,
+	}
+
 	serverConn, resp, err := dialer.DialContext(ctx, r.URL.String(), newHeaders)
 	if err != nil {
 		fmt.Printf("wss dial %+v\n", err)

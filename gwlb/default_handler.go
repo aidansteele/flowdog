@@ -1,13 +1,14 @@
 package gwlb
 
 import (
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"time"
 )
 
-func DefaultHandler(interceptor Interceptor) http.Handler {
+func DefaultHandler(interceptor Interceptor, tlsClientConfig *tls.Config) http.Handler {
 	rp := &httputil.ReverseProxy{
 		ModifyResponse: interceptor.OnResponse,
 		Director:       interceptor.OnRequest,
@@ -19,6 +20,7 @@ func DefaultHandler(interceptor Interceptor) http.Handler {
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
+			TLSClientConfig:       tlsClientConfig,
 		},
 	}
 
@@ -34,7 +36,7 @@ func DefaultHandler(interceptor Interceptor) http.Handler {
 		}
 
 		if r.Header.Get("Upgrade") == "websocket" {
-			proxyWebsocket(w, r)
+			proxyWebsocket(w, r, tlsClientConfig)
 		} else {
 			rp.ServeHTTP(w, r)
 		}

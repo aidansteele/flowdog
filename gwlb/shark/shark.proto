@@ -4,8 +4,15 @@ option go_package = "github.com/aidansteele/flowdog/gwlb/shark";
 
 import "google/protobuf/timestamp.proto";
 
+enum PacketType {
+  UNKNOWN = 0;
+  PRE = 1;
+  POST = 2;
+}
+
 message GetPacketsInput {
   string Filter = 1;
+  PacketType PacketType = 2;
 }
 
 message GetPacketsOutput {

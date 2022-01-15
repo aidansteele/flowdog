@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"github.com/aidansteele/flowdog/mytls"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -34,7 +35,7 @@ var errTimeout = errors.New("gwlb timeout")
 type activeFlow struct {
 	geneveHeader []byte
 	gwlbConn     *net.UDPConn
-	mirror       chan []byte
+	mirror       chan mirror.Packet
 	endpoint     *channel.Endpoint
 	stack        *stack.Stack
 	httpReady    chan struct{}
@@ -48,7 +49,7 @@ type newFlowOptions struct {
 	acceptor  FlowAcceptor
 	handler   http.Handler
 	keyLogger io.Writer
-	mirror    chan []byte
+	mirror    chan mirror.Packet
 }
 
 func newFlow(ctx context.Context, ch chan genevePacket, geneveOpts AwsGeneveOptions, options newFlowOptions) {
@@ -71,19 +72,19 @@ func newFlow(ctx context.Context, ch chan genevePacket, geneveOpts AwsGeneveOpti
 
 	if !isTcp {
 		fmt.Printf("fast-path for non-tcp flow=%08x\n", geneveOpts.FlowCookie)
-		fastPath(ctx, ch, gwlbConn, timeoutNonTcp)
+		fastPath(ctx, ch, gwlbConn, options.mirror, timeoutNonTcp)
 		return
 	}
 
 	if !isIpv4 {
 		fmt.Printf("fast-path for non-ipv4 flow=%08x\n", geneveOpts.FlowCookie)
-		fastPath(ctx, ch, gwlbConn, timeoutTcp)
+		fastPath(ctx, ch, gwlbConn, options.mirror, timeoutTcp)
 		return
 	}
 
 	if options.handler == nil || (tcpLayer.DstPort != 80 && tcpLayer.DstPort != 443) {
 		fmt.Printf("fast-path for non-port 80/443 flow=%08x\n", geneveOpts.FlowCookie)
-		fastPath(ctx, ch, gwlbConn, timeoutTcp)
+		fastPath(ctx, ch, gwlbConn, options.mirror, timeoutTcp)
 		return
 	}
 
@@ -152,11 +153,7 @@ func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket
 			ipLayer := pkt.pkt.NetworkLayer().(*layers.IPv4)
 
 			// TODO: avoid stringification in hot path
-			if originator == ipLayer.SrcIP.String() {
-				mirrorCopy := make([]byte, len(pkt.buf))
-				copy(mirrorCopy, pkt.buf)
-				a.mirror <- mirrorCopy
-			}
+			a.mirror <- mirror.New(pkt.buf, ipLayer.SrcIP.String() == originator)
 
 			data := buffer.NewVectorisedView(1, []buffer.View{payload})
 			newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: data})
@@ -182,20 +179,13 @@ func (a *activeFlow) runNetstackToGwlb(ctx context.Context) error {
 
 		buf.Write(a.geneveHeader)
 		buf.Write(view)
-		payload := buf.Bytes()
-
-		_, err := a.gwlbConn.Write(payload)
+		_, err := a.gwlbConn.Write(buf.Bytes())
 		if err != nil {
 			return errors.WithStack(err)
 		}
 
 		// TODO: avoid stringification in hot path
-		if pinfo.Route.RemoteAddress.String() == originator {
-			mirrorCopy := make([]byte, len(payload))
-			copy(mirrorCopy, payload)
-			a.mirror <- mirrorCopy
-		}
-
+		a.mirror <- mirror.New(buf.Bytes(), pinfo.Route.RemoteAddress.String() == originator)
 		buf.Reset()
 	}
 }

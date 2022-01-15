@@ -3,10 +3,11 @@ package gwlb
 import (
 	"context"
 	"fmt"
-	"github.com/aidansteele/flowdog/gwlb/shark"
+	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
+	"io"
 	"net"
 	"net/http"
 )
@@ -18,8 +19,10 @@ type genevePacket struct {
 }
 
 type Server struct {
-	Acceptor FlowAcceptor
-	Handler  http.Handler
+	Acceptor     FlowAcceptor
+	Handler      http.Handler
+	KeyLogWriter io.Writer
+	Mirror       chan mirror.Packet
 }
 
 func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
@@ -27,15 +30,6 @@ func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
 	flowEndedCh := make(chan uint32)
 
 	pktbuf := make([]byte, 16_384)
-
-	sharkch := make(chan []byte)
-	ss := shark.NewSharkServer()
-
-	sharkL, err := net.Listen("tcp", "127.0.0.1:7081")
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	go ss.Serve(ctx, sharkL, sharkch)
 
 	for {
 		select {
@@ -65,8 +59,8 @@ func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
 					newFlow(ctx, ch, opts, newFlowOptions{
 						acceptor:  s.Acceptor,
 						handler:   s.Handler,
-						mirror:    sharkch,
-						keyLogger: ss.KeyLogWriter(),
+						mirror:    s.Mirror,
+						keyLogger: s.KeyLogWriter,
 					})
 					flowEndedCh <- cookie
 				}()
