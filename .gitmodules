@@ -1,0 +1,3 @@
+[submodule "forks/gopacket"]
+	path = forks/gopacket
+	url = git@github.com:aidansteele/gopacket.git

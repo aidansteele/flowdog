@@ -16,8 +16,6 @@ import (
 	"strings"
 )
 
-var sslKeyLogFileOpt *extcap.ConfigStringOpt
-
 func main() {
 	// TODO: open upstream github issue about capture filter validation not working
 	// note that program is invoked for every keystroke in capture filter textbox
@@ -39,11 +37,6 @@ func main() {
 		os.Args = append(os.Args[:versionIdx], os.Args[versionIdx+1:]...)
 	}
 
-	sslKeyLogFileOpt = extcap.NewConfigStringOpt("sslkeylogfile", "confdisplay")
-	sslKeyLogFileOpt.Default("/tmp/sslkeylogfile")
-	sslKeyLogFileOpt.Placeholder("the placeholder")
-	sslKeyLogFileOpt.Tooltip("the tooltip")
-
 	app := extcap.App{
 		Usage:         "flowdogshark",
 		HelpPage:      "flowdogshark attaches to flowdog-managed AWS GWLB appliances for VPC-wide packet capture",
@@ -51,10 +44,10 @@ func main() {
 		GetDLT:        getDLT,
 		StartCapture:  startCapture,
 		GetAllConfigOptions: func() []extcap.ConfigOption {
-			return []extcap.ConfigOption{sslKeyLogFileOpt}
+			return []extcap.ConfigOption{}
 		},
 		GetConfigOptions: func(iface string) ([]extcap.ConfigOption, error) {
-			return []extcap.ConfigOption{sslKeyLogFileOpt}, nil
+			return []extcap.ConfigOption{}, nil
 		},
 	}
 
@@ -78,26 +71,9 @@ func getDLT(iface string) (extcap.DLT, error) {
 	}, nil
 }
 
-type stringifier interface {
-	String() string
-}
-
 func startCapture(iface string, pipe io.WriteCloser, filter string, opts map[string]interface{}) error {
-	var keyLogFile *os.File
-	// TODO: upstream issue about how tricky it is to extract opts
-	if keyLogPath, ok := opts["sslkeylogfile"].(stringifier); ok && keyLogPath.String() != "" {
-		var err error
-		keyLogFile, err = os.OpenFile(keyLogPath.String(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		defer keyLogFile.Close()
-	}
-
 	defer pipe.Close()
-	w := pcapgo.NewWriter(pipe)
-
-	err := w.WriteFileHeader(0, layers.LinkTypeRaw)
+	w, err := pcapgo.NewNgWriter(pipe, layers.LinkTypeRaw)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -128,13 +104,14 @@ func startCapture(iface string, pipe io.WriteCloser, filter string, opts map[str
 			return errors.WithStack(err)
 		}
 
-		if keyLogFile != nil && msg.SslKeyLog != nil {
-			_, err = keyLogFile.Write(msg.SslKeyLog)
+		if msg.SslKeyLog != nil {
+			err = w.WriteDecryptionSecrets(pcapgo.NgDecryptionSecrets{
+				Type: pcapgo.NgDecryptionSecretTypeTLSKeyLog,
+				Data: msg.SslKeyLog,
+			})
 			if err != nil {
 				return errors.WithStack(err)
 			}
-
-			keyLogFile.Sync()
 		}
 
 		if msg.Payload != nil {
@@ -151,6 +128,11 @@ func startCapture(iface string, pipe io.WriteCloser, filter string, opts map[str
 			if err != nil {
 				return errors.WithStack(err)
 			}
+		}
+
+		err = w.Flush()
+		if err != nil {
+			return errors.WithStack(err)
 		}
 	}
 

@@ -27,4 +27,7 @@ require (
 	rogchap.com/v8go v0.7.0
 )
 
-replace rogchap.com/v8go v0.7.0 => github.com/rogchap/v8go v0.7.1-0.20220106173329-ede7cee433be
+replace (
+	rogchap.com/v8go v0.7.0 => github.com/rogchap/v8go v0.7.1-0.20220106173329-ede7cee433be
+	github.com/google/gopacket v1.1.19 => ./forks/gopacket
+)
