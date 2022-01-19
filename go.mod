@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-lambda-go v1.28.0
 	github.com/aws/aws-sdk-go v1.42.31
 	github.com/davecgh/go-spew v1.1.1
+	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/glassechidna/go-emf v0.0.0-20220102031255-2c11928b55f0
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gopacket v1.1.19
@@ -15,6 +16,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
 	github.com/tidwall/spinlock v0.1.0
+	golang.org/x/image v0.0.0-20211028202545-6944b10bf410 // indirect
 	golang.org/x/net v0.0.0-20220111093109-d55c255bac03 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20220111092808-5a964db01320 // indirect
@@ -28,6 +30,6 @@ require (
 )
 
 replace (
-	rogchap.com/v8go v0.7.0 => github.com/rogchap/v8go v0.7.1-0.20220106173329-ede7cee433be
 	github.com/google/gopacket v1.1.19 => ./forks/gopacket
+	rogchap.com/v8go v0.7.0 => github.com/rogchap/v8go v0.7.1-0.20220106173329-ede7cee433be
 )

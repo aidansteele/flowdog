@@ -7,10 +7,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"github.com/aidansteele/flowdog/examples/account_id_emf"
-	"github.com/aidansteele/flowdog/examples/cloudfront_functions"
 	"github.com/aidansteele/flowdog/examples/geneve_headers"
 	"github.com/aidansteele/flowdog/examples/lambda_acceptor"
 	"github.com/aidansteele/flowdog/examples/sts_rickroll"
+	"github.com/aidansteele/flowdog/examples/upsidedown"
 	"github.com/aidansteele/flowdog/gwlb"
 	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"github.com/aidansteele/flowdog/gwlb/shark"
@@ -53,7 +53,8 @@ func main() {
 		&geneve_headers.GeneveHeaders{},
 		&account_id_emf.AccountIdEmf{},
 		&sts_rickroll.StsRickroll{},
-		cloudfront_functions.NewRickroll(),
+		upsidedown.UpsideDown(),
+		//cloudfront_functions.NewRickroll(),
 	}
 
 	acceptor, err := lambda_acceptor.New(

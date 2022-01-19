@@ -51,6 +51,12 @@ cool ideas you have. Or any enhancements to the following ideas.
   be used to alert on newly-seen account IDs: a potential indicator of a compromised
   instance.
 
+* [`upsidedown/upsidedown.go`](/examples/upsidedown/upsidedown.go) is an 
+  implementation of the classic [Upside-Down-Ternet][upsidedown]. It blurs and 
+  rotates every image 180º when browsing the net.
+
+  ![upside down](upside-down.png)
+
 * [`sts_rickroll/sts_rickroll.go`](/examples/sts_rickroll/sts_rickroll.go) is
   another silly example. Here we are modifying the response of the AWS API call
   for `aws sts get-caller-identity` to return something unexpected. You could
@@ -181,3 +187,4 @@ are:
 [agent]: https://docs.aws.amazon.com/systems-manager/latest/userguide/ssm-agent.html
 [har]: https://en.wikipedia.org/wiki/HAR_(file_format)
 [amz-blog]: https://aws.amazon.com/blogs/networking-and-content-delivery/integrate-your-custom-logic-or-appliance-with-aws-gateway-load-balancer/
+[upsidedown]: https://www.ex-parrot.com/pete/upside-down-ternet.html
