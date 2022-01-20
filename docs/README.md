@@ -70,12 +70,7 @@ cool ideas you have. Or any enhancements to the following ideas.
   for shenanigans. This code will detect websockets and parse messages, but right
   now only passes them back and forth. Soon™.
 
-* Another example I might do if people find it interesting: Live Wireshark 
-  capture of all traffic going into/out of/around a VPC. Wireshark has effective
-  support for "plugins" and it would be straight-forward to mirror the traffic
-  to a developer's laptop.
-
-* Another TODO: You could save [HAR archives][har] of all web traffic to buckets
+* TODO: You could save [HAR archives][har] of all web traffic to buckets
   in S3 for later perusal.  
 
 ## What about TLS?
@@ -144,10 +139,10 @@ GWLB appliance. The app will need to juggle these two TCP connections and pass
 the underlying data to and from Google and the EC2 instance, all while keeping
 the two connection's different states in sync.
 
-That's so much work that it's no wonder that even after more than year, it's no
-wonder that even after more than a year, only massive well-funded vendors have
-implemented this capability. And even then, it looks like they're limited to
-either read-only inspection or dropping suspicious packets.
+That's so much work that it's no wonder that even after more than a year, only 
+massive well-funded vendors have  implemented this capability. And even then, it 
+looks like they're limited to either read-only inspection or dropping suspicious 
+packets.
 
 ![vendors](vendors-aws-blog.png)
 
