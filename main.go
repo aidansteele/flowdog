@@ -11,6 +11,7 @@ import (
 	"github.com/aidansteele/flowdog/examples/lambda_acceptor"
 	"github.com/aidansteele/flowdog/examples/sts_rickroll"
 	"github.com/aidansteele/flowdog/examples/upsidedown"
+	"github.com/aidansteele/flowdog/examples/webfirehose"
 	"github.com/aidansteele/flowdog/gwlb"
 	"github.com/aidansteele/flowdog/gwlb/mirror"
 	"github.com/aidansteele/flowdog/gwlb/shark"
@@ -18,6 +19,7 @@ import (
 	"github.com/aidansteele/flowdog/mytls"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/firehose"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/kms/kmsiface"
 	"github.com/aws/aws-sdk-go/service/lambda"
@@ -30,6 +32,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -49,7 +53,17 @@ func main() {
 		panic(err)
 	}
 
+	wf := webfirehose.New(firehose.New(sess), ec2.New(sess), "webfirehose-Firehose-0k2UpKEJfMz0")
+	go func() {
+		err := wf.Run(ctx)
+		if err != nil {
+			fmt.Printf("%+v\n", err)
+			panic(err)
+		}
+	}()
+
 	chain := gwlb.Chain{
+		wf,
 		&geneve_headers.GeneveHeaders{},
 		&account_id_emf.AccountIdEmf{},
 		&sts_rickroll.StsRickroll{},

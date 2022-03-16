@@ -1,0 +1,65 @@
+Resources:
+  Firehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Sub arn:aws:s3:::${Bucket}
+        RoleARN: !GetAtt Role.Arn
+        Prefix: output/!{timestamp:yyyy/MM/dd}/!{partitionKeyFromQuery:etldp1}/
+        ErrorOutputPrefix: errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/
+        CompressionFormat: GZIP
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 128
+        DynamicPartitioningConfiguration:
+          Enabled: true
+          RetryOptions:
+            DurationInSeconds: 300
+        ProcessingConfiguration:
+          Enabled: true
+          Processors:
+            - Type: MetadataExtraction
+              Parameters:
+                - ParameterName: MetadataExtractionQuery
+                  ParameterValue: "{etldp1:.ETldPlusOne}"
+                - ParameterName: JsonParsingEngine
+                  ParameterValue: JQ-1.6
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: Firehose
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${Bucket}
+                  - !Sub arn:aws:s3:::${Bucket}/*
+
+Outputs:
+  Firehose:
+    Value: !Ref Firehose

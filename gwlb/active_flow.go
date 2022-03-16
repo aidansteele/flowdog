@@ -94,7 +94,8 @@ func newFlow(ctx context.Context, ch chan genevePacket, geneveOpts AwsGeneveOpti
 	copy(hdr, contents)
 
 	sourceAddr := &net.TCPAddr{IP: ipLayer.SrcIP, Port: int(tcpLayer.SrcPort)}
-	ctx = ContextWithSourceAddr(ctx, sourceAddr)
+	destAddr := &net.TCPAddr{IP: ipLayer.DstIP, Port: int(tcpLayer.DstPort)}
+	ctx = ContextWithAddrs(ctx, sourceAddr, destAddr)
 
 	endpoint, netstack := newEndpointAndStack(geneveOpts)
 	ctx = ContextWithNetstack(ctx, netstack)
@@ -137,7 +138,8 @@ func newFlow(ctx context.Context, ch chan genevePacket, geneveOpts AwsGeneveOpti
 }
 
 func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket, timeout time.Duration) error {
-	originator := SourceAddrFromContext(ctx).IP.String()
+	originatorAddr, _ := AddrsFromContext(ctx)
+	originator := originatorAddr.IP.String()
 
 	for {
 		select {
@@ -165,7 +167,8 @@ func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket
 
 func (a *activeFlow) runNetstackToGwlb(ctx context.Context) error {
 	buf := &bytes.Buffer{}
-	originator := SourceAddrFromContext(ctx).IP.String()
+	originatorAddr, _ := AddrsFromContext(ctx)
+	originator := originatorAddr.IP.String()
 
 	for {
 		pinfo, more := a.endpoint.ReadContext(ctx)

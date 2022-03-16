@@ -11,7 +11,7 @@ import (
 
 func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	intendedAddr := ctx.Value(http.LocalAddrContextKey).(*net.TCPAddr)
-	sourceAddr := SourceAddrFromContext(ctx)
+	sourceAddr, _ := AddrsFromContext(ctx)
 	netstack := NetstackFromContext(ctx)
 
 	remote := tcpip.FullAddress{Addr: tcpip.Address(intendedAddr.IP.To4()), Port: uint16(intendedAddr.Port)}
