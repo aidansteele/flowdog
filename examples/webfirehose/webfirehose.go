@@ -73,35 +73,57 @@ func New(firehose firehoseiface.FirehoseAPI, ec2 ec2iface.EC2API, stream string)
 	}
 }
 
+// Firehose PutRecordBatch limits: at most 500 records and 4 MB per call.
+const (
+	firehoseMaxBatchRecords = 500
+	firehoseMaxBatchBytes   = 4 * 1024 * 1024
+)
+
 func (wf *WebFirehose) Run(ctx context.Context) error {
 	batch := []*firehose.Record{}
 	size := 0
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+
+		_, err := wf.firehose.PutRecordBatchWithContext(ctx, &firehose.PutRecordBatchInput{
+			DeliveryStreamName: &wf.stream,
+			Records:            batch,
+		})
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		fmt.Printf("firehose dump: count=%d bytes=%d\n", len(batch), size)
+		batch = nil
+		size = 0
+		return nil
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if len(batch) == 0 {
-				continue
+			if err := flush(); err != nil {
+				return err
 			}
-
-			// TODO: check batch count, combined batch size, etc
-			_, err := wf.firehose.PutRecordBatchWithContext(ctx, &firehose.PutRecordBatchInput{
-				DeliveryStreamName: &wf.stream,
-				Records:            batch,
-			})
-			if err != nil {
-				return errors.WithStack(err)
-			}
-
-			fmt.Printf("firehose dump: count=%d bytes=%d\n", len(batch), size)
-			size = 0
-			batch = nil
 		case entry := <-wf.entries:
-			fmt.Printf(string(entry))
+			// use Print, not Printf: entry is data, not a format string
+			fmt.Print(string(entry))
 			record := &firehose.Record{Data: entry}
+
+			// flush before we would exceed a Firehose batch limit
+			if len(batch) >= firehoseMaxBatchRecords || size+len(record.Data) > firehoseMaxBatchBytes {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+
 			batch = append(batch, record)
 			size += len(record.Data)
 		}
@@ -127,10 +149,13 @@ func (wf *WebFirehose) OnResponse(resp *http.Response) error {
 	}
 
 	var tlsrr *requestRecordTls
-	if server.Port == 443 {
+	// resp.TLS carries the connection state for client responses;
+	// resp.Request.TLS is a server-side field and is nil here, so reading
+	// it would panic.
+	if server.Port == 443 && resp.TLS != nil {
 		tlsrr = &requestRecordTls{
-			Version:     resp.Request.TLS.Version,
-			CipherSuite: resp.Request.TLS.CipherSuite,
+			Version:     resp.TLS.Version,
+			CipherSuite: resp.TLS.CipherSuite,
 		}
 	}
 
