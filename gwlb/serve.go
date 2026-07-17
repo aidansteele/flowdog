@@ -62,7 +62,20 @@ func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
 						mirror:    s.Mirror,
 						keyLogger: s.KeyLogWriter,
 					})
-					flowEndedCh <- cookie
+					// The flow has finished, but the Serve loop may still
+					// have this flow in its map (it only removes it once it
+					// reads from flowEndedCh) and could send us more packets.
+					// Keep draining ch until we manage to signal completion,
+					// otherwise a send on ch here would deadlock the Serve
+					// loop against our own send on flowEndedCh.
+					for {
+						select {
+						case flowEndedCh <- cookie:
+							return
+						case <-ch:
+							// discard late packets for an ended flow
+						}
+					}
 				}()
 			}
 
