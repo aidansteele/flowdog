@@ -81,8 +81,6 @@ func main() {
 		panic(err)
 	}
 
-	ctx := context.Background()
-
 	shark := shark.NewSharkServer()
 	sharkL, err := net.Listen("tcp", "127.0.0.1:7081")
 	if err != nil {
