@@ -150,8 +150,11 @@ So I built this thing. It uses a handful of packages to make traffic inspection
 and modification accessible to even developers like you or me. Those packages
 are:
 
-* [`inet.af/netstack`](https://pkg.go.dev/inet.af/netstack): a reimplementation
-  of the entire Linux TCP/IP stack in Go, extracted from the gVisor project.
+* [`gvisor.dev/gvisor/pkg/tcpip`](https://pkg.go.dev/gvisor.dev/gvisor/pkg/tcpip):
+  a reimplementation of the entire Linux TCP/IP stack in Go, from the gVisor
+  project. (This previously used the `inet.af/netstack` snapshot, which existed
+  to make the netstack usable before Go supported module-graph pruning; that's
+  no longer necessary, so we depend on gVisor directly.)
 
 * [`github.com/google/gopacket`](https://pkg.go.dev/github.com/google/gopacket)
   to extract and parse the Geneve, IP, TCP, UDP, etc layers from the raw packets

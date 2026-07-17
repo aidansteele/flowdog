@@ -11,14 +11,14 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
-	"inet.af/netstack/tcpip"
-	"inet.af/netstack/tcpip/adapters/gonet"
-	"inet.af/netstack/tcpip/buffer"
-	"inet.af/netstack/tcpip/header"
-	"inet.af/netstack/tcpip/link/channel"
-	"inet.af/netstack/tcpip/network/ipv4"
-	"inet.af/netstack/tcpip/stack"
-	"inet.af/netstack/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"io"
 	"net"
 	"net/http"
@@ -157,8 +157,9 @@ func (a *activeFlow) runGwlbToNetstack(ctx context.Context, ch chan genevePacket
 			// TODO: avoid stringification in hot path
 			a.mirror <- mirror.New(pkt.buf, ipLayer.SrcIP.String() == originator)
 
-			data := buffer.NewVectorisedView(1, []buffer.View{payload})
-			newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Data: data})
+			newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(payload),
+			})
 			a.endpoint.InjectInbound(ipv4.ProtocolNumber, newPkt)
 			newPkt.DecRef()
 		}
@@ -171,24 +172,28 @@ func (a *activeFlow) runNetstackToGwlb(ctx context.Context) error {
 	originator := originatorAddr.IP.String()
 
 	for {
-		pinfo, more := a.endpoint.ReadContext(ctx)
-		if !more {
+		pkt := a.endpoint.ReadContext(ctx)
+		if pkt == nil {
 			fmt.Printf("exiting flow with cookie %08x\n", GeneveOptionsFromContext(ctx).FlowCookie)
 			return ctx.Err()
 		}
 
-		data := buffer.NewVectorisedView(pinfo.Pkt.Size(), pinfo.Pkt.Views())
-		view := data.ToView()
+		// capture the egress route before releasing the packet buffer
+		remoteAddr := pkt.EgressRoute.RemoteAddress
+		view := pkt.ToView()
+		pkt.DecRef()
 
 		buf.Write(a.geneveHeader)
-		buf.Write(view)
+		buf.Write(view.AsSlice())
+		view.Release()
+
 		_, err := a.gwlbConn.Write(buf.Bytes())
 		if err != nil {
 			return errors.WithStack(err)
 		}
 
 		// TODO: avoid stringification in hot path
-		a.mirror <- mirror.New(buf.Bytes(), pinfo.Route.RemoteAddress.String() == originator)
+		a.mirror <- mirror.New(buf.Bytes(), remoteAddr.String() == originator)
 		buf.Reset()
 	}
 }

@@ -2,7 +2,7 @@ package gwlb
 
 import (
 	"context"
-	"inet.af/netstack/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"net"
 )
 
