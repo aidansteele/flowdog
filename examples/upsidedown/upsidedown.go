@@ -37,9 +37,17 @@ func (i *interceptor) OnResponse(resp *http.Response) error {
 	originalBody := resp.Body
 	defer originalBody.Close()
 
-	img, err := imaging.Decode(originalBody)
+	raw, err := ioutil.ReadAll(originalBody)
 	if err != nil {
 		return errors.WithStack(err)
+	}
+
+	img, err := imaging.Decode(bytes.NewReader(raw))
+	if err != nil {
+		// not a format we can decode (e.g. svg, webp, animated gif) - pass
+		// the original bytes through untouched instead of failing the request
+		resp.Body = ioutil.NopCloser(bytes.NewReader(raw))
+		return nil
 	}
 
 	// perform the.. "magic"
